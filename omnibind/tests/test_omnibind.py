@@ -31,9 +31,9 @@ from pwchem.protocols import ProtChemImportSmallMolecules
 from pwchem.tests import TestImportSequences
 from pwchem.utils import assertHandle
 
-from ..protocols import ProtConPLexPrediction
+from ..protocols import ProtOmniBindPrediction
 
-class TestConPLexPrediction(TestImportSequences):
+class TestOmniBindPrediction(TestImportSequences):
 	@classmethod
 	def setUpClass(cls):
 		super().setUpClass()
@@ -53,18 +53,18 @@ class TestConPLexPrediction(TestImportSequences):
 			filesPath=cls.dsLig.getFile('mol2'))
 		cls.proj.launchProtocol(cls.protImportSmallMols, wait=False)
 
-	def _runConPLexPrediction(self):
-		protConPLex = self.newProtocol(ProtConPLexPrediction)
+	def _runOmniBindPrediction(self):
+		protOmniBind = self.newProtocol(ProtOmniBindPrediction)
 
-		protConPLex.inputSequences.set(self.protImportSeqs)
-		protConPLex.inputSequences.setExtended('outputSequences')
-		protConPLex.inputSmallMols.set(self.protImportSmallMols)
-		protConPLex.inputSmallMols.setExtended('outputSmallMolecules')
+		protOmniBind.inputSequences.set(self.protImportSeqs)
+		protOmniBind.inputSequences.setExtended('outputSequences')
+		protOmniBind.inputSmallMols.set(self.protImportSmallMols)
+		protOmniBind.inputSmallMols.setExtended('outputSmallMolecules')
 
-		self.proj.launchProtocol(protConPLex, wait=False)
-		return protConPLex
+		self.proj.launchProtocol(protOmniBind, wait=False)
+		return protOmniBind
 
 	def test(self):
-		protConPLex = self._runConPLexPrediction()
-		self._waitOutput(protConPLex, 'outputSequences', sleepTime=10)
-		assertHandle(self.assertIsNotNone, getattr(protConPLex, 'outputSequences', None))
+		protOmniBind = self._runOmniBindPrediction()
+		self._waitOutput(protOmniBind, 'outputSequences', sleepTime=10)
+		assertHandle(self.assertIsNotNone, getattr(protOmniBind, 'outputSequences', None))

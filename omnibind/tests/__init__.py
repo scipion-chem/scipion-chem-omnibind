@@ -24,4 +24,4 @@
 # *
 # **************************************************************************
 
-from omnibind.tests.test_conplex import *
+from omnibind.tests.test_omnibind import *
