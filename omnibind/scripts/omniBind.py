@@ -17,6 +17,8 @@ def run_batch(config_path):
     cfg = OmegaConf.load(cfg_data["config"])
     cfg.model.type = cfg_data["model_type"]
 
+
+    #todo wait to see better way
     cfg.model.hid_dim = 256
 
     cfg.model.encoder_aa.hid_dim = 256
@@ -58,7 +60,7 @@ def run_batch(config_path):
                     smiles=smi,
                     aa_sequence=seq,
                     #sa_sequence=None,
-                    sa_sequence="A" * len(seq),
+                    sa_sequence="A" * len(seq), #todo issue opened about this
                     model=model,
                     cfg=cfg
                 )
