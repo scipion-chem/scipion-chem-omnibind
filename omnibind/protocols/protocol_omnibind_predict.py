@@ -182,6 +182,7 @@ class ProtOmniBindPrediction(EMProtocol):
           outputFile = inSeqs.getInteractScoresFile()
       except Exception:
           outputFile = None
+      print(outputFile)
 
       if outputFile and os.path.exists(outputFile):
           localFile = self._getExtraPath("scoresFile.json")
@@ -258,11 +259,19 @@ class ProtOmniBindPrediction(EMProtocol):
           outSeqs.append(outSeq)
 
       outSeqs.setInteractMols(mols=inMols)
-      outSeqs.setScoreTypes(scores=["OmniBind"])
+
+      scoreTypes = set()
+      for entry in data["entries"]:
+          for molScores in entry["molecules"].values():
+              for key in molScores.keys():
+                  if key.startswith("score_"):
+                      scoreTypes.add(key.split("_", 1)[1])
+
+      outSeqs.setScoreTypes(scores=list(scoreTypes))
+      outSeqs.setInteractScoresFile(outputFile)
 
       for outSeq in outSeqs:
           outSeq.setInteractScoresFile(str(outputFile))
-      outSeqs.setInteractScoresFile(outputFile)
 
       self._defineOutputs(outputSequences=outSeqs)
 
