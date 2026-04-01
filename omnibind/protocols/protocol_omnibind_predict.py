@@ -40,7 +40,134 @@ from .. import Plugin as omnibindPlugin
 from ..constants import OMNIBIND_DIC
 
 class ProtOmniBindPrediction(EMProtocol):
-  """Run a prediction using a OmniBind trained model over a set of proteins and ligands"""
+  """Run a prediction using a OmniBind trained model over a set of proteins and ligands
+
+  AI Generated:
+
+  This protocol performs protein-ligand interaction prediction using the OmniBind
+    deep learning model for virtual screening.
+
+    It evaluates binding affinity-related metrics (pKi, pKd, pIC50, pEC50) between
+    a set of protein sequences and a set of small molecules or a molecular library.
+
+    The protocol supports GPU and CPU execution and can operate either on a direct
+    small-molecule dataset or on a curated chemical library.
+
+    Inputs
+    ------
+    inputSequences:
+        SetOfSequences object containing protein sequences to be screened.
+
+    useLibrary:
+        Boolean flag indicating whether the input compounds come from a
+        SmallMoleculesLibrary object.
+
+    inputLibrary:
+        SmallMoleculesLibrary containing a curated set of compounds
+        (used when useLibrary = True).
+
+    inputSmallMols:
+        SetOfSmallMolecules used as input when useLibrary = False.
+
+    GPU Configuration
+    ------------------
+    useGpu:
+        Enables GPU acceleration for OmniBind inference.
+
+    gpuList:
+        Comma-separated list of GPU device IDs available for execution.
+
+    Workflow
+    --------
+    1. Input preparation
+       - Reads protein sequences from inputSequences
+       - Reads molecules either from:
+         a) SetOfSmallMolecules (converted to SMILES), or
+         b) SmallMoleculesLibrary
+
+    2. Molecule conversion (if needed)
+       - Converts molecular files into SMILES format using OpenBabel
+       - Stores SMILES strings in a structured directory
+       - Generates mapping between molecule IDs and SMILES
+
+    3. Input file generation
+       - Creates compounds.csv file with:
+         SMILES, molecule ID pairs
+       - Extracts protein sequences into dictionary format
+
+    4. Configuration setup
+       - Builds config.json containing:
+         - Model checkpoint path
+         - Model type
+         - Input compounds CSV
+         - Protein sequences
+         - Output file path
+         - Execution device (CPU/GPU)
+
+    5. Model execution
+       - Runs OmniBind inference script (omniBind.py)
+       - Uses pretrained checkpoint and configuration file
+       - Produces interaction prediction results (results.csv)
+
+    6. Results parsing
+       - Reads results.csv containing:
+         protein-ligand interaction predictions
+       - Maps SMILES back to molecule IDs
+       - Builds interaction dictionary:
+         {protein ? {molecule ? {pKi, pKd, pIC50, pEC50}}}
+
+    7. Output integration
+       - Merges predictions with existing interaction score files
+       - Updates JSON-based interaction storage if available
+       - Otherwise creates a new interaction score file
+
+    8. Sequence-level output generation
+       - Creates SetOfSequencesChem output object
+       - Attaches interaction score files to each sequence
+       - Preserves molecule-to-sequence scoring relationships
+
+    9. Single-sequence specialization
+       - If only one sequence is provided:
+         a) Updates SmallMoleculesLibrary with pKi scores OR
+         b) Annotates SetOfSmallMolecules with OmniBind scores:
+            - _omnibind_pKi
+            - _omnibind_pKd
+            - _omnibind_pIC50
+            - _omnibind_pEC50
+
+    Output
+    ------
+    outputSequences:
+        SetOfSequencesChem object containing:
+        - Protein sequences
+        - Associated interaction predictions
+        - Score metadata (pKi, pKd, pIC50, pEC50)
+        - Reference to interaction score file (JSON)
+
+    outputSmallMolecules (optional):
+        Annotated SetOfSmallMolecules including OmniBind scores:
+        - Binding affinity predictions per ligand
+
+    outputLibrary (optional):
+        SmallMoleculesLibrary enriched with predicted interaction scores
+
+    Summary
+    -------
+    This protocol enables large-scale virtual screening of protein?ligand
+    interactions using the OmniBind deep learning model.
+
+    It integrates sequence data, molecular representations, and pretrained
+    neural networks to predict binding affinity-related metrics in a
+    reproducible and scalable workflow.
+
+    Notes
+    -----
+    - Requires a valid OmniBind installation and pretrained checkpoint.
+    - GPU acceleration is supported when available.
+    - Input molecules can be provided either as structures or libraries.
+    - Designed for high-throughput virtual screening pipelines.
+
+  """
   _label = 'omnibind virtual screening'
 
   def __init__(self, **kwargs):
