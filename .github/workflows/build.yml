@@ -1,0 +1,41 @@
+name: Build plugin
+
+on:
+  pull_request:
+    branches: [devel, master]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:        
+      - name: Setup enviroment
+        uses: scipion-chem/.github/.github/composites/install-scipion@main
+      
+      # Checkout to Pull Request branch if exists
+      - name: Install scipion-chem (in branch ${{ github.head_ref }} if exists)
+        working-directory: ${{ github.workspace }}/../
+        env:
+          REPO_NAME: scipion-chem
+          BRANCH_NAME: ${{ github.head_ref }}
+        run: |
+          git clone https://github.com/scipion-chem/$REPO_NAME.git
+          if [ $(git ls-remote --heads https://github.com/scipion-chem/$REPO_NAME.git $BRANCH_NAME | wc -l) -eq 1 ]; then
+            cd $REPO_NAME && git checkout $BRANCH_NAME && cd -
+          fi
+          scipion/scipion3 installp -p $REPO_NAME --devel
+      
+      - name: Checkout repository
+        uses: actions/checkout@main
+        with:
+          ref: ${{ github.head_ref }}
+  
+      - name: Install plugin from pull request
+        working-directory: ${{ github.workspace }}
+        run: ../scipion/scipion3 installp -p . --devel
+  
+      - name: Run tests
+        working-directory: ${{ github.workspace }}/${{ vars.FOLDER_WITH_VERSION }}
+        run: |
+          pip install --user scipion-testrunner
+          scipion_testrunner ${{ github.workspace }}/../scipion/scipion3 ${{ vars.FOLDER_WITH_VERSION }} --noGpu --testData=testData.json
