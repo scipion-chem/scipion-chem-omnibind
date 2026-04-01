@@ -262,6 +262,7 @@ class ProtOmniBindPrediction(EMProtocol):
 
       for outSeq in outSeqs:
           outSeq.setInteractScoresFile(str(outputFile))
+      outSeqs.setInteractScoresFile(outputFile)
 
       self._defineOutputs(outputSequences=outSeqs)
 
