@@ -182,8 +182,6 @@ class ProtOmniBindPrediction(EMProtocol):
           outputFile = inSeqs.getInteractScoresFile()
       except Exception:
           outputFile = None
-      print(outputFile)
-
       if outputFile and os.path.exists(outputFile):
           localFile = self._getExtraPath("scoresFile.json")
           shutil.copy(outputFile, localFile)
