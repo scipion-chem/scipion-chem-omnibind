@@ -33,7 +33,7 @@ OR
 
 2. **Switch to the desired branch** (main or devel):
 
-Scipion-chem-conplex is constantly under development.
+Scipion-chem-omnibind is constantly under development.
 If you want a relatively older an more stable version, use main branch (default).
 If you want the latest changes and developments, user devel branch.
 
