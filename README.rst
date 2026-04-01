@@ -1,10 +1,10 @@
 ================================
-ConPLex scipion plugin
+OmniBind scipion plugin
 ================================
 
 **Documentation under development, sorry for the inconvenience**
 
-Scipion framework plugin for the use of tools provided by ConPLex software 
+Scipion framework plugin for the use of tools provided by OmniBind software 
 
 ===================
 Install this plugin
@@ -17,7 +17,7 @@ to run these protocols. To install the plugin, you have two options:
 
 .. code-block:: 
 
-      scipion installp -p scipion-chem-conplex
+      scipion installp -p scipion-chem-omnibind
       
 OR
 
@@ -29,7 +29,7 @@ OR
 
 .. code-block::
 
-            git clone https://github.com/scipion-chem/scipion-chem-conplex.git
+            git clone https://github.com/scipion-chem/scipion-chem-omnibind.git
 
 2. **Switch to the desired branch** (main or devel):
 
@@ -39,14 +39,14 @@ If you want the latest changes and developments, user devel branch.
 
 .. code-block::
 
-            cd scipion-chem-conplex
+            cd scipion-chem-omnibind
             git checkout devel
 
 3. **Install**:
 
 .. code-block::
 
-            scipion installp -p path_to_scipion-chem-conplex --devel
+            scipion installp -p path_to_scipion-chem-omnibind --devel
 
 - **Binary files** 
 
