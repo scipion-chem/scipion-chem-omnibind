@@ -1,88 +1,125 @@
-import json
+import json, os
 import pandas as pd
 from omnibind.predict import load_model, predict_single
 from omegaconf import OmegaConf
 
-def load_compounds(path):
+
+def loadCompounds(path):
     df = pd.read_csv(path)
-    # assume column "smiles"
     return df["smiles"].tolist()
 
-def run_batch(config_path):
-    # load config
+
+def load3diFasta(path):
+    stitched3di = {}
+    if not os.path.exists(path):
+        print(f"Error: FASTA file not found at {path}")
+        return stitched3di
+
+    with open(path) as f:
+        currentRootId = None
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+
+            if line.startswith(">"):
+                # Get the first part of the header
+                fullId = line[1:].split()[0]
+
+                # Split from the right once
+                parts = fullId.rsplit('_', 1)
+
+                if len(parts) > 1 and len(parts[1]) == 1 and parts[1].isalpha():
+                    currentRootId = parts[0]
+                else:
+                    currentRootId = fullId
+
+                if currentRootId not in stitched3di:
+                    stitched3di[currentRootId] = ""
+            else:
+                if currentRootId:
+                    stitched3di[currentRootId] += line
+
+    return stitched3di
+
+
+def runBatch(config_path):
     with open(config_path) as f:
-        cfg_data = json.load(f)
+        cfgData = json.load(f)
 
-    # setup OmniBind config
-    cfg = OmegaConf.load(cfg_data["config"])
-    cfg.model.type = cfg_data["model_type"]
+    cfg = OmegaConf.load(cfgData["config"])
+    cfg.model.type = cfgData["model_type"]
 
-
-    #todo wait to see better way
+    # Model architecture parameters
     cfg.model.hid_dim = 256
-
     cfg.model.encoder_aa.hid_dim = 256
     cfg.model.encoder_sa.hid_dim = 256
     cfg.model.protdecoder.hid_dim = 256
     cfg.model.decoder.hid_dim = 256
-
     cfg.model.encoder_aa.n_layers = 2
     cfg.model.encoder_sa.n_layers = 2
     cfg.model.protdecoder.n_layers = 2
     cfg.model.decoder.n_layers = 5
-
     cfg.model.num_encoder_layers = 2
     cfg.model.num_decoder_layers = 5
-
     cfg.model.encoder_aa.n_head = 4
     cfg.model.encoder_sa.n_head = 4
     cfg.model.protdecoder.n_head = 4
     cfg.model.decoder.n_head = 4
     cfg.model.cafb.n_head = 4
+    cfg.training.device = cfgData["device"]
 
-    cfg.training.device = cfg_data["device"]
+    model = load_model(cfg, cfgData["checkpoint"])
+    molecules = loadCompounds(cfgData["compounds_csv"])
+    sequences = cfgData["sequences"]
 
-    model = load_model(cfg, cfg_data["checkpoint"])
-
-    molecules = load_compounds(cfg_data["compounds_csv"])
-    sequences = cfg_data["sequences"]
+    # Load and stitch 3Di sequences by root ID
+    saSequences = load3diFasta(cfgData["ss_file"])
 
     results = []
+    for protId, aaSeq in sequences.items():
+        print(f'Processing protein: {protId}')
 
-    for prot_id, seq in sequences.items():
-        print(f'Processing protein: {prot_id}')
-        batch_smiles = molecules
+        # Get the stitched 3Di sequence for this protein
+        saSeq = saSequences.get(protId)
 
-        outs = []
-        for smi in batch_smiles:
-            outs.append(
-                predict_single(
+        if saSeq is None:
+            print(f"Warning: No 3Di sequence found for {protId}. Skipping.")
+            continue
+
+        if len(aaSeq) != len(saSeq):
+            print(f"Error: Length mismatch for {protId}!")
+            print(f"  AA Sequence Length: {len(aaSeq)}")
+            print(f"  3Di Sequence Length: {len(saSeq)}")
+            continue
+
+        for smi in molecules:
+            try:
+                out = predict_single(
                     smiles=smi,
-                    aa_sequence=seq,
-                    #sa_sequence=None,
-                    sa_sequence="A" * len(seq), #todo issue opened about this
+                    aaSequence=aaSeq,
+                    saSequence=saSeq,
                     model=model,
                     cfg=cfg
                 )
-            )
 
-        for smi, out in zip(batch_smiles, outs):
-            results.append({
-                "protein": prot_id,
-                "smiles": smi,
-                "pKi": out["predicted_ki"],
-                "pKd": out["predicted_kd"],
-                "pIC50": out["predicted_ic50"],
-                "pEC50": out["predicted_ec50"]
-            })
+                results.append({
+                    "protein": protId,
+                    "smiles": smi,
+                    "pKi": out["predicted_ki"],
+                    "pKd": out["predicted_kd"],
+                    "pIC50": out["predicted_ic50"],
+                    "pEC50": out["predicted_ec50"]
+                })
+            except Exception as e:
+                print(f"Failed prediction for {protId} and {smi}: {e}")
 
     df = pd.DataFrame(results)
-    df.to_csv(cfg_data["output"], index=False)
-
-    print(f"Saved results: {cfg_data['output']}")
+    df.to_csv(cfgData["output"], index=False)
+    print(f"Saved results: {cfgData['output']}")
 
 
 if __name__ == "__main__":
     import sys
-    run_batch(sys.argv[1])
 
+    runBatch(sys.argv[1])

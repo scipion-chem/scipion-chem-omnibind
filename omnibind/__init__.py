@@ -68,6 +68,9 @@ class Plugin(pwchemPlugin):
             "conda install -c conda-forge rdkit -y"
         ).addCommand(
             f"{cls.getEnvActivationCommand(OMNIBIND_DIC)} && "
+            "conda install -c conda-forge -c bioconda foldseek -y"
+        ).addCommand(
+            f"{cls.getEnvActivationCommand(OMNIBIND_DIC)} && "
             "cd OmniBind && pip install -r requirements.txt && pip install -e ."
         )
 
