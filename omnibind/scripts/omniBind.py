@@ -73,14 +73,12 @@ def runBatch(config_path):
     molecules = loadCompounds(cfgData["compounds_csv"])
     sequences = cfgData["sequences"]
 
-    # Load and stitch 3Di sequences by root ID
     saSequences = load3diFasta(cfgData["ss_file"])
 
     results = []
     for protId, aaSeq in sequences.items():
         print(f'Processing protein: {protId}')
 
-        # Get the stitched 3Di sequence for this protein
         saSeq = saSequences.get(protId)
 
         if saSeq is None:
@@ -97,8 +95,8 @@ def runBatch(config_path):
             try:
                 out = predict_single(
                     smiles=smi,
-                    aaSequence=aaSeq,
-                    saSequence=saSeq,
+                    aa_sequence=aaSeq,
+                    sa_sequence=saSeq,
                     model=model,
                     cfg=cfg
                 )

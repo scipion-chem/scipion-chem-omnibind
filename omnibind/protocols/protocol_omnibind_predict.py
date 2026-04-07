@@ -23,24 +23,22 @@
 # *  e-mail address 'scipion@cnb.csic.es'
 # *
 # **************************************************************************
-
+import csv
 import json
 import os
 import shutil
-import pandas as pd
-
 from Bio.PDB import PDBParser
 from Bio.SeqUtils import seq1
+from pwchem.objects import SetOfSmallMolecules, SmallMolecule
 from pwem.objects import AtomStruct, SetOfAtomStructs
 
 from pwem.protocols import EMProtocol
 from pyworkflow.protocol import params
 
 from pwem.convert import cifToPdb
-from pyworkflow.object import String
+from pyworkflow.object import String, Float
 from pwchem import Plugin as pwchemPlugin
 from pwchem.constants import OPENBABEL_DIC
-from pwchem.objects import SequenceChem, SetOfSequencesChem, SmallMoleculesLibrary
 
 from .. import Plugin as omnibindPlugin
 from ..constants import OMNIBIND_DIC
@@ -64,11 +62,14 @@ class ProtOmniBindPrediction(EMProtocol):
                    label="Choose GPU IDs",
                    help="Comma-separated GPU devices that can be used.")
 
-    iGroup = form.addGroup('Input')
-    #iGroup.addParam('inputSequences', params.PointerParam, pointerClass="SetOfSequences",
-    #                label='Input protein sequences: ',
-    #                help="Set of protein sequences to perform the screening on")
-    iGroup.addParam('inputStructures', params.PointerParam, pointerClass="SetOfAtomStructs",
+    iGroup = form.addGroup('Input') #todo choose whether to input one AtomStruct or a set and then the output will depend on the chosen input
+    iGroup.addParam('input', params.EnumParam, label='Input structure(s) as: ', default=0,
+                    choices=['AtomStruct', 'SetOfAtomStructs'],
+                    help='How to input the input structure(s)')
+    iGroup.addParam('inputStructure', params.PointerParam, pointerClass="AtomStruct", condition='input==0',
+                    label='Input structure: ',
+                    help='Protein structure to perform the screening on')
+    iGroup.addParam('inputStructures', params.PointerParam, pointerClass="SetOfAtomStructs", condition='input==1',
                     label='Input structures: ',
                     help='Set of protein structures to perform the screening on')
 
@@ -88,7 +89,10 @@ class ProtOmniBindPrediction(EMProtocol):
       self._insertFunctionStep(self.convertStep)
     self._insertFunctionStep(self.generate3DiStep)
     self._insertFunctionStep(self.predictStep)
-    self._insertFunctionStep(self.createOutputStep)
+    if self.input.get() == 0:
+        self._insertFunctionStep(self.createOutputStepSingle)
+    else:
+        self._insertFunctionStep(self.createOutputStepSet)
 
 
   def convertStep(self):
@@ -102,12 +106,10 @@ class ProtOmniBindPrediction(EMProtocol):
     pwchemPlugin.runScript(self, 'obabel_IO.py', args, env=OPENBABEL_DIC, cwd=smiDir)
 
   def generate3DiStep(self):
-      structSet = self.inputStructures.get()
-
       structDir = os.path.abspath(self._getExtraPath('structures'))
       os.makedirs(structDir, exist_ok=True)
 
-      for struct in structSet:
+      for struct in self._getInpStructs():
           src = struct.getFileName()
           dst = os.path.join(structDir, os.path.basename(src))
           if not os.path.exists(dst):
@@ -140,7 +142,6 @@ class ProtOmniBindPrediction(EMProtocol):
   def predictStep(self):
     smisDic = self.getInputSMIs()
     protSeqsDic = self.getInputSeqsFromStructures()
-
 
     compoundsFile = os.path.abspath(self._getExtraPath('compounds.csv'))
     with open(compoundsFile, 'w') as f:
@@ -181,20 +182,96 @@ class ProtOmniBindPrediction(EMProtocol):
         cwd=extraPath
     )
 
-  def createOutputStep(self):
-      inpStructs = self.inputStructures.get()
-      resultsFile = self._getPath('results.csv')
-      outStructs = SetOfAtomStructs().create(outputPath=self._getPath())
+  def createOutputStepSingle(self):
+      resultsFile = os.path.abspath(os.path.join(self.getPath(), "results.csv"))
 
-      for struct in inpStructs:
-          newStruct = AtomStruct()
-          newStruct.copy(struct)
+      smisDic = self.getInputSMIs()
 
-          newStruct.OmniBind_file = String()
-          newStruct.setAttributeValue('OmniBind_file', str(resultsFile))
-          outStructs.append(newStruct)
+      results_map = {}
+      with open(resultsFile, 'r') as f:
+          reader = csv.DictReader(f)
+          for row in reader:
+              key = (row['protein'], row['smiles'].strip())
+              results_map[key] = row
 
-      self._defineOutputs(outputAtomStructs=outStructs)
+      outputMols = SetOfSmallMolecules().create(outputPath=self._getPath())
+
+      protID = os.path.basename(self.inputStructure.get().getFileName()).split('.')[0]
+
+      for mol in self.inputSmallMols.get():
+          newMol = SmallMolecule()
+          newMol.copy(mol)
+
+          newMol.setProteinFile(self.inputStructure.get().getFileName())
+          molName = os.path.basename(mol.getFileName()).split('.')[0]
+
+          molSmi = smisDic.get(molName)
+
+          if molSmi:
+              predKey = (protID, molSmi.strip())
+              if predKey in results_map:
+                  res = results_map[predKey]
+                  newMol.pKi = Float()
+                  newMol.setAttributeValue('pKi', float(res['pKi']))
+                  newMol.pKd = Float()
+                  newMol.setAttributeValue('pKd', float(res['pKd']))
+                  newMol.pIC50 = Float()
+                  newMol.setAttributeValue('pIC50', float(res['pIC50']))
+                  newMol.pEC50 = Float()
+                  newMol.setAttributeValue('pEC50', float(res['pEC50']))
+
+          outputMols.append(newMol)
+
+      self._defineOutputs(outputSmallMols=outputMols)
+
+  def createOutputStepSet(self):
+      resultsFile = os.path.abspath(os.path.join(self.getPath(), "results.csv"))
+
+      if not os.path.exists(resultsFile):
+          self.getLogger().info("OmniBind results file not found!")
+          return
+
+      smisDic = self.getInputSMIs()
+
+      results_map = {}
+      with open(resultsFile, 'r') as f:
+          reader = csv.DictReader(f)
+          for row in reader:
+              key = (row['protein'], row['smiles'].strip())
+              results_map[key] = row
+
+      outputMols = SetOfSmallMolecules().create(outputPath=self._getPath())
+
+      for struct in self.inputStructures.get():
+          protPath = struct.getFileName()
+          protID = os.path.basename(protPath).split('.')[0]
+
+          for mol in self.inputSmallMols.get():
+              newMol = SmallMolecule()
+              newMol.copy(mol, copyId=False)
+
+              newMol.setProteinFile(protPath)
+
+              molName = os.path.basename(mol.getFileName()).split('.')[0]
+              molSmi = smisDic.get(molName)
+
+              if molSmi:
+                  predKey = (protID, molSmi.strip())
+                  if predKey in results_map:
+                      res = results_map[predKey]
+
+                      newMol.pKi = Float()
+                      newMol.setAttributeValue('pKi', float(res['pKi']))
+                      newMol.pKd = Float()
+                      newMol.setAttributeValue('pKd', float(res['pKd']))
+                      newMol.pIC50 = Float()
+                      newMol.setAttributeValue('pIC50', float(res['pIC50']))
+                      newMol.pEC50 = Float()
+                      newMol.setAttributeValue('pEC50', float(res['pEC50']))
+
+              outputMols.append(newMol)
+
+      self._defineOutputs(outputSmallMols=outputMols)
 
   ############## UTILS ########################
   def copyInputMolsInDir(self):
@@ -225,12 +302,17 @@ class ProtOmniBindPrediction(EMProtocol):
 
     return smisDic
 
+  def _getInpStructs(self):
+      if self.input.get() == 0: # AtomStruct
+          return [self.inputStructure.get()]
+      return self.inputStructures.get()
+
   def getInputSeqsFromStructures(self):
       seqsDic = {}
 
       parser = PDBParser(QUIET=True)
 
-      for i, struct in enumerate(self.inputStructures.get()):
+      for i, struct in enumerate(self._getInpStructs()):
           filePath = struct.getFileName()
 
           if filePath.endswith(".cif") or filePath.endswith(".mmcif"):

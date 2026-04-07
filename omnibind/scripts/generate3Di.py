@@ -22,7 +22,7 @@ def main(config_path):
         cfg = json.load(f)
 
     structDir = cfg["structures_dir"]
-    outputFasta = cfg["outputFasta"]
+    outputFasta = cfg["output_fasta"]
 
     if not os.path.exists(structDir):
         raise Exception(f"Structures directory not found: {structDir}")
