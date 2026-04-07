@@ -30,7 +30,6 @@ import shutil
 from Bio.PDB import PDBParser
 from Bio.SeqUtils import seq1
 from pwchem.objects import SetOfSmallMolecules, SmallMolecule
-from pwem.objects import AtomStruct, SetOfAtomStructs
 
 from pwem.protocols import EMProtocol
 from pyworkflow.protocol import params

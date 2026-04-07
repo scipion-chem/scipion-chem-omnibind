@@ -50,23 +50,7 @@ def runBatch(config_path):
     cfg = OmegaConf.load(cfgData["config"])
     cfg.model.type = cfgData["model_type"]
 
-    # Model architecture parameters
-    cfg.model.hid_dim = 256
-    cfg.model.encoder_aa.hid_dim = 256
-    cfg.model.encoder_sa.hid_dim = 256
-    cfg.model.protdecoder.hid_dim = 256
-    cfg.model.decoder.hid_dim = 256
-    cfg.model.encoder_aa.n_layers = 2
-    cfg.model.encoder_sa.n_layers = 2
-    cfg.model.protdecoder.n_layers = 2
-    cfg.model.decoder.n_layers = 5
-    cfg.model.num_encoder_layers = 2
-    cfg.model.num_decoder_layers = 5
-    cfg.model.encoder_aa.n_head = 4
-    cfg.model.encoder_sa.n_head = 4
-    cfg.model.protdecoder.n_head = 4
-    cfg.model.decoder.n_head = 4
-    cfg.model.cafb.n_head = 4
+
     cfg.training.device = cfgData["device"]
 
     model = load_model(cfg, cfgData["checkpoint"])
