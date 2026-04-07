@@ -29,7 +29,8 @@ import os
 import shutil
 from Bio.PDB import PDBParser
 from Bio.SeqUtils import seq1
-from pwchem.objects import SetOfSmallMolecules, SmallMolecule
+from pwchem.objects import SetOfSmallMolecules, SmallMolecule, SmallMoleculesLibrary
+from pwem.objects import SetOfAtomStructs
 
 from pwem.protocols import EMProtocol
 from pyworkflow.protocol import params
@@ -142,7 +143,7 @@ class ProtOmniBindPrediction(EMProtocol):
                    label="Choose GPU IDs",
                    help="Comma-separated GPU devices that can be used.")
 
-    iGroup = form.addGroup('Input') #todo choose whether to input one AtomStruct or a set and then the output will depend on the chosen input
+    iGroup = form.addGroup('Input')
     iGroup.addParam('input', params.EnumParam, label='Input structure(s) as: ', default=0,
                     choices=['AtomStruct', 'SetOfAtomStructs'],
                     help='How to input the input structure(s)')
@@ -169,10 +170,11 @@ class ProtOmniBindPrediction(EMProtocol):
       self._insertFunctionStep(self.convertStep)
     self._insertFunctionStep(self.generate3DiStep)
     self._insertFunctionStep(self.predictStep)
-    if self.input.get() == 0:
-        self._insertFunctionStep(self.createOutputStepSingle)
-    else:
-        self._insertFunctionStep(self.createOutputStepSet)
+    #if self.input.get() == 0:
+    #    self._insertFunctionStep(self.createOutputStepSingle)
+    #else:
+    #    self._insertFunctionStep(self.createOutputStepSet)
+    self._insertFunctionStep(self.createOutputStep)
 
 
   def convertStep(self):
@@ -262,96 +264,96 @@ class ProtOmniBindPrediction(EMProtocol):
         cwd=extraPath
     )
 
-  def createOutputStepSingle(self):
-      resultsFile = os.path.abspath(os.path.join(self.getPath(), "results.csv"))
+  def createOutputStep(self):
+      # 1. Paths and initial data
+      resultsFile = self.getPath("results.csv")
+      outputFile = self.getPath("scoresFile.json")
 
       smisDic = self.getInputSMIs()
 
-      results_map = {}
+      smiToName = {v.strip(): k for k, v in smisDic.items()}
+
+      intDic = {}
+
       with open(resultsFile, 'r') as f:
-          reader = csv.DictReader(f)
+          reader = csv.DictReader(f, delimiter=',')
           for row in reader:
-              key = (row['protein'], row['smiles'].strip())
-              results_map[key] = row
+              protID = row['protein'].strip()
+              smi = row['smiles'].strip()
 
-      outputMols = SetOfSmallMolecules().create(outputPath=self._getPath())
+              molName = smiToName.get(smi)
 
-      protID = os.path.basename(self.inputStructure.get().getFileName()).split('.')[0]
+              if not molName:
+                  print(f"Could not find name for SMILES: {smi}")
+                  continue
 
-      for mol in self.inputSmallMols.get():
-          newMol = SmallMolecule()
-          newMol.copy(mol)
+              if protID not in intDic:
+                  intDic[protID] = {}
 
-          newMol.setProteinFile(self.inputStructure.get().getFileName())
-          molName = os.path.basename(mol.getFileName()).split('.')[0]
+              intDic[protID][molName] = {
+                  "score_pKi": float(row['pKi']),
+                  "score_pKd": float(row['pKd']),
+                  "score_pIC50": float(row['pIC50']),
+                  "score_pEC50": float(row['pEC50'])
+              }
 
-          molSmi = smisDic.get(molName)
+      inStructs = self._getInpStructs()
+      outStructs = SetOfAtomStructs().create(outputPath=self._getPath())
+      newEntries = []
 
-          if molSmi:
-              predKey = (protID, molSmi.strip())
-              if predKey in results_map:
-                  res = results_map[predKey]
-                  newMol.pKi = Float()
-                  newMol.setAttributeValue('pKi', float(res['pKi']))
-                  newMol.pKd = Float()
-                  newMol.setAttributeValue('pKd', float(res['pKd']))
-                  newMol.pIC50 = Float()
-                  newMol.setAttributeValue('pIC50', float(res['pIC50']))
-                  newMol.pEC50 = Float()
-                  newMol.setAttributeValue('pEC50', float(res['pEC50']))
+      for struct in inStructs:
+          protID = os.path.basename(struct.getFileName()).split('.')[0]
 
-          outputMols.append(newMol)
+          outStruct = struct.clone()
+          outStruct.InteractScoresFile = String()
+          outStruct.setAttributeValue('InteractScoresFile', outputFile)
+          outStructs.append(outStruct)
 
-      self._defineOutputs(outputSmallMols=outputMols)
+          if protID in intDic:
+              entry = {
+                  "sequence": protID,
+                  "molecules": intDic[protID]
+              }
+              newEntries.append(entry)
 
-  def createOutputStepSet(self):
-      resultsFile = os.path.abspath(os.path.join(self.getPath(), "results.csv"))
+      with open(outputFile, "w", encoding="utf-8") as f:
+          json.dump({"entries": newEntries}, f, indent=4)
 
-      if not os.path.exists(resultsFile):
-          self.getLogger().info("OmniBind results file not found!")
-          return
+      self._defineOutputs(outputAtomStructs=outStructs)
 
-      smisDic = self.getInputSMIs()
+      inSeqs = self._getInpStructs()
+      if len(inSeqs) == 1:
+          protID = os.path.basename(inSeqs[0].getFileName()).split('.')[0]
+          scoreDic = intDic.get(protID, {})
 
-      results_map = {}
-      with open(resultsFile, 'r') as f:
-          reader = csv.DictReader(f)
-          for row in reader:
-              key = (row['protein'], row['smiles'].strip())
-              results_map[key] = row
+          if self.useLibrary.get():
+              mapDic = self.inputLibrary.get().getLibraryMap(inverted=True)
+              oLibFile = self._getPath('outputLibrary.smi')
+              with open(oLibFile, 'w') as f:
+                  for molName, scores in scoreDic.items():
+                      f.write(f'{mapDic[molName]}\t{molName}\t{scores["score_pKi"]}\n')
 
-      outputMols = SetOfSmallMolecules().create(outputPath=self._getPath())
+              outputLib = SmallMoleculesLibrary(libraryFilename=oLibFile, origin='OmniBind')
+              self._defineOutputs(outputLibrary=outputLib)
 
-      for struct in self.inputStructures.get():
-          protPath = struct.getFileName()
-          protID = os.path.basename(protPath).split('.')[0]
+          else:
+              inSet = self.inputSmallMols.get()
+              outputSet = inSet.createCopy(self._getPath(), copyInfo=True)
+              outputSet.copyInfo(inSet)
+              for mol in inSet:
+                  nMol = mol.clone()
+                  molName = nMol.getMolName()
+                  if molName in scoreDic:
+                      scores = scoreDic[molName]
+                      setattr(nMol, '_pKi', Float(scores['score_pKi']))
+                      setattr(nMol, '_pKd', Float(scores['score_pKd']))
+                      setattr(nMol, '_pIC50', Float(scores['score_pIC50']))
+                      setattr(nMol, '_pEC50', Float(scores['score_pEC50']))
+                      outputSet.append(nMol)
 
-          for mol in self.inputSmallMols.get():
-              newMol = SmallMolecule()
-              newMol.copy(mol, copyId=False)
+              self._defineOutputs(outputSmallMolecules=outputSet)
 
-              newMol.setProteinFile(protPath)
 
-              molName = os.path.basename(mol.getFileName()).split('.')[0]
-              molSmi = smisDic.get(molName)
-
-              if molSmi:
-                  predKey = (protID, molSmi.strip())
-                  if predKey in results_map:
-                      res = results_map[predKey]
-
-                      newMol.pKi = Float()
-                      newMol.setAttributeValue('pKi', float(res['pKi']))
-                      newMol.pKd = Float()
-                      newMol.setAttributeValue('pKd', float(res['pKd']))
-                      newMol.pIC50 = Float()
-                      newMol.setAttributeValue('pIC50', float(res['pIC50']))
-                      newMol.pEC50 = Float()
-                      newMol.setAttributeValue('pEC50', float(res['pEC50']))
-
-              outputMols.append(newMol)
-
-      self._defineOutputs(outputSmallMols=outputMols)
 
   ############## UTILS ########################
   def copyInputMolsInDir(self):
