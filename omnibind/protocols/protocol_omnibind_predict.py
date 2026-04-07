@@ -43,7 +43,88 @@ from .. import Plugin as omnibindPlugin
 from ..constants import OMNIBIND_DIC
 
 class ProtOmniBindPrediction(EMProtocol):
-  """Run a prediction using a OmniBind trained model over a set of proteins and ligands"""
+  """
+  AI Generated:
+
+  Protocol to use OmniBind.
+
+    AI Generated:
+
+        ProtOmniBindPrediction - User Manual
+
+        Overview
+        --------
+        This protocol predicts binding affinities between protein structures and
+        small molecules using the OmniBind deep learning framework. It supports
+        both single structures and sets of structures, automatically extracting
+        sequences and generating structural embeddings (3Di) required by the model.
+
+        Inputs
+        ------
+        - **inputStructure / inputStructures**: Protein structure(s) (PDB/mmCIF) used
+          for virtual screening.
+        - **inputSmallMols**: SetOfSmallMolecules containing ligands to evaluate.
+        - **inputLibrary**: Optional SmallMoleculesLibrary (SMILES-based input).
+        - **useLibrary**: Whether to use a SMILES library instead of molecular files.
+        - **useGpu**: Enables GPU acceleration for prediction.
+
+        Workflow
+        --------
+        1. **SMILES preparation**:
+           - Converts input molecules into SMILES format (if not using a library).
+           - Stores mappings between molecule names and SMILES strings.
+
+        2. **3Di generation**:
+           - Extracts protein structures and generates 3Di structural sequences
+             using Foldseek-based processing.
+           - Outputs a FASTA file with structural encodings.
+
+        3. **Sequence extraction**:
+           - Parses input PDB/mmCIF files.
+           - Extracts amino acid sequences from all valid chains.
+
+        4. **OmniBind execution**:
+           - Prepares a configuration file including compounds, sequences, and 3Di data.
+           - Runs the OmniBind model using CPU or GPU.
+           - Produces predictions for each protein?ligand pair.
+
+        5. **Output generation**:
+           - Parses prediction results (pKi, pKd, pIC50, pEC50).
+           - Assigns scores to each molecule for each structure.
+           - Outputs either:
+             - A SetOfSmallMolecules annotated with scores, or
+             - A combined dataset for multiple structures.
+
+        Outputs
+        -------
+        - **SetOfSmallMolecules**: Molecules annotated with predicted binding scores
+          for each protein structure.
+        - **results.csv**: CSV file containing predicted affinities for all
+          protein?ligand combinations.
+
+        Practical Recommendations
+        -------------------------
+        - Use when structural information is available for target proteins.
+        - Suitable for structure-based virtual screening workflows.
+        - Ensure input structures are clean and biologically meaningful.
+
+        Summary & Interpretation
+        ------------------------
+        - Predictions include:
+            - pKi
+            - pKd
+            - pIC50
+            - pEC50
+        - Higher values indicate stronger predicted binding affinity.
+        - Results can guide prioritization of compounds for docking or experiments.
+
+        Warnings
+        --------
+        - Incorrect or low-quality structures may lead to unreliable predictions.
+        - Sequence extraction may fail for non-standard residues or malformed files.
+        - Large datasets may require significant computational resources.
+        - Ensure OmniBind environment and checkpoints are correctly installed.
+  """
   _label = 'omnibind virtual screening'
 
   def __init__(self, **kwargs):
