@@ -26,6 +26,7 @@
 import csv
 import json
 import os
+import pickle
 import shutil
 from Bio.PDB import PDBParser
 from Bio.SeqUtils import seq1
@@ -36,7 +37,7 @@ from pwem.protocols import EMProtocol
 from pyworkflow.protocol import params
 
 from pwem.convert import cifToPdb
-from pyworkflow.object import String, Float
+from pyworkflow.object import String, Float, Pointer
 from pwchem import Plugin as pwchemPlugin
 from pwchem.constants import OPENBABEL_DIC
 
@@ -265,97 +266,175 @@ class ProtOmniBindPrediction(EMProtocol):
     )
 
   def createOutputStep(self):
-      # 1. Paths and initial data
       resultsFile = self.getPath("results.csv")
-      outputFile = self.getPath("scoresFile.json")
-
       smisDic = self.getInputSMIs()
-
       smiToName = {v.strip(): k for k, v in smisDic.items()}
 
       intDic = {}
-
       with open(resultsFile, 'r') as f:
           reader = csv.DictReader(f, delimiter=',')
           for row in reader:
               protID = row['protein'].strip()
               smi = row['smiles'].strip()
-
               molName = smiToName.get(smi)
 
               if not molName:
-                  print(f"Could not find name for SMILES: {smi}")
                   continue
 
               if protID not in intDic:
                   intDic[protID] = {}
-
               intDic[protID][molName] = {
-                  "score_pKi": float(row['pKi']),
-                  "score_pKd": float(row['pKd']),
-                  "score_pIC50": float(row['pIC50']),
-                  "score_pEC50": float(row['pEC50'])
+                  "OmniBind_pKi": float(row['pKi']),
+                  "OmniBind_pKd": float(row['pKd']),
+                  "OmniBind_pIC50": float(row['pIC50']),
+                  "OmniBind_pEC50": float(row['pEC50'])
               }
 
       inStructs = self._getInpStructs()
       outStructs = SetOfAtomStructs().create(outputPath=self._getPath())
-      newEntries = []
 
+      outputFile = self.writeInteractScoresDic(intDic)
+      outStructs._interactScoresFile = String(outputFile)
+
+      data = {}
       for struct in inStructs:
           protID = os.path.basename(struct.getFileName()).split('.')[0]
 
           outStruct = struct.clone()
-          outStruct.InteractScoresFile = String()
-          outStruct.setAttributeValue('InteractScoresFile', outputFile)
+          #outStruct._interactScoresFile = String(outputFile)
           outStructs.append(outStruct)
 
           if protID in intDic:
-              entry = {
-                  "sequence": protID,
-                  "molecules": intDic[protID]
-              }
-              newEntries.append(entry)
+              data[protID] = intDic[protID]
 
-      with open(outputFile, "w", encoding="utf-8") as f:
-          json.dump({"entries": newEntries}, f, indent=4)
+
+      outMols = self.inputLibrary.get() if self.useLibrary.get() else self.inputSmallMols.get()
+      #molsListFile = self.setInteractMols(mols=outMols, structs=outStructs)
+      #outStructs._interactMols = String(molsListFile)
+
+      allMolsSet = SetOfSmallMolecules().create(outputPath=self._getPath())
+      addedMolsNames = set()
+      inputObj = self.inputStructure.get() if self.input.get() == 0 else self.inputStructures.get()
+      if hasattr(inputObj,'_interactMols'):
+          prevMols = inputObj._interactMols.get()
+          if prevMols:
+              for m in prevMols:
+                  allMolsSet.append(m)
+                  addedMolsNames.add(m.getMolName())
+
+      currentMols = self.inputLibrary.get() if self.useLibrary.get() else self.inputSmallMols.get()
+      for m in currentMols:
+          if m.getMolName() not in addedMolsNames:
+              allMolsSet.append(m)
+              addedMolsNames.add(m.getMolName())
+
+
+      outStructs._interactMols = Pointer(allMolsSet)
 
       self._defineOutputs(outputAtomStructs=outStructs)
 
-      inSeqs = self._getInpStructs()
-      if len(inSeqs) == 1:
-          protID = os.path.basename(inSeqs[0].getFileName()).split('.')[0]
+      if len(inStructs) == 1:
+          protID = os.path.basename(inStructs[0].getFileName()).split('.')[0]
           scoreDic = intDic.get(protID, {})
 
           if self.useLibrary.get():
-              mapDic = self.inputLibrary.get().getLibraryMap(inverted=True)
+              inLib = self.inputLibrary.get()
+              mapDic = inLib.getLibraryMap(inverted=True, fullLine=True)
               oLibFile = self._getPath('outputLibrary.smi')
+
               with open(oLibFile, 'w') as f:
                   for molName, scores in scoreDic.items():
-                      f.write(f'{mapDic[molName]}\t{molName}\t{scores["score_pKi"]}\n')
+                      f.write(f'{mapDic[molName]}\t{scores["OmniBind_pKi"]}\n')
 
-              outputLib = SmallMoleculesLibrary(libraryFilename=oLibFile, origin='OmniBind')
+              outputLib = inLib.clone()
+              outputLib.setFileName(oLibFile)
+              outputLib.setHeaders(inLib.getHeaders() + ['OmniBind_pKi'])
               self._defineOutputs(outputLibrary=outputLib)
 
           else:
               inSet = self.inputSmallMols.get()
               outputSet = inSet.createCopy(self._getPath(), copyInfo=True)
-              outputSet.copyInfo(inSet)
+
               for mol in inSet:
                   nMol = mol.clone()
                   molName = nMol.getMolName()
                   if molName in scoreDic:
-                      scores = scoreDic[molName]
-                      setattr(nMol, '_pKi', Float(scores['score_pKi']))
-                      setattr(nMol, '_pKd', Float(scores['score_pKd']))
-                      setattr(nMol, '_pIC50', Float(scores['score_pIC50']))
-                      setattr(nMol, '_pEC50', Float(scores['score_pEC50']))
+                      s = scoreDic[molName]
+                      setattr(nMol, 'OmniBind_pKi', Float(s['OmniBind_pKi']))
+                      setattr(nMol, 'OmniBind_pKd', Float(s['OmniBind_pKd']))
+                      setattr(nMol, 'OmniBind_pIC50', Float(s['OmniBind_pIC50']))
+                      setattr(nMol, 'OmniBind_pEC50', Float(s['OmniBind_pEC50']))
                       outputSet.append(nMol)
 
+              outputSet.updateMolClass()
               self._defineOutputs(outputSmallMolecules=outputSet)
 
 
-
   ############## UTILS ########################
+  def setInteractMols(self, mols, structs):
+      molsListFile = os.path.join(self._getExtraPath(), 'interacting_molecules.txt')
+      allPaths = set()
+
+      inputObj = self.inputStructure.get() if self.input.get() == 0 else self.inputStructures.get()
+
+      if hasattr(inputObj, '_interactMols'):
+          prevFile = inputObj.getAttributeValue('_interactMols')
+          if prevFile and os.path.exists(str(prevFile)):
+              print(f"--- DEBUG: Leyendo rastro previo de {prevFile} ---")
+              with open(str(prevFile), 'r') as f:
+                  allPaths.update(line.strip() for line in f if line.strip())
+
+      for mol in mols:
+          molPath = mol.getFileName()
+          if molPath:
+              allPaths.add(os.path.abspath(molPath))
+
+      with open(molsListFile, 'w') as f:
+          for path in sorted(allPaths):
+              f.write(f"{path}\n")
+
+      structs._interactMols = String(molsListFile)
+
+      return molsListFile
+
+  def writeInteractScoresDic(self, intDic, outFile=None):
+      """
+      Generates/Updates a JSON file. If a previous scores file exists,
+      it merges the new data into it.
+      """
+      if not outFile:
+          outFile = os.path.join(self._getExtraPath(), 'scoresFile.json')
+
+      finalData = {}
+
+      inStructs = self._getInpStructs()
+      if hasattr(inStructs, '_interactScoresFile'):
+          prevFile = getattr(inStructs, '_interactScoresFile')
+      else:
+          prevFile = None
+
+      if prevFile:
+          try:
+              with open(str(prevFile), 'r') as f:
+                  finalData = json.load(f)
+          except Exception:
+              finalData = {}
+
+      for protID, newMols in intDic.items():
+          if protID not in finalData:
+              finalData[protID] = {}
+
+          for molName, newScores in newMols.items():
+              if molName in finalData[protID]:
+                  finalData[protID][molName].update(newScores)
+              else:
+                  finalData[protID][molName] = newScores
+
+      with open(outFile, 'w') as f:
+          json.dump(finalData, f, indent=4)
+
+      return outFile
+
   def copyInputMolsInDir(self):
     oDir = os.path.abspath(self._getTmpPath('inMols'))
     if not os.path.exists(oDir):

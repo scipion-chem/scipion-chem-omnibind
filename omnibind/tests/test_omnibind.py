@@ -23,48 +23,56 @@
 # * e-mail address 'scipion@cnb.csic.es'
 # *
 # **************************************************************************
-
+from pwem.protocols import ProtImportPdb
 from pyworkflow.tests import setupTestProject, DataSet
 
 # Scipion chem imports
 from pwchem.protocols import ProtChemImportSmallMolecules
-from pwchem.tests import TestImportSequences
 from pwchem.utils import assertHandle
+from pyworkflow.tests import BaseTest
 
 from ..protocols import ProtOmniBindPrediction
 
-class TestOmniBindPrediction(TestImportSequences):
-	@classmethod
-	def setUpClass(cls):
-		super().setUpClass()
-		cls.ds = DataSet.getDataSet('model_building_tutorial')
-		cls.dsLig = DataSet.getDataSet("smallMolecules")
-		setupTestProject(cls)
+class TestOmniBindPrediction(BaseTest):
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        cls.ds = DataSet.getDataSet('model_building_tutorial')
+        cls.dsLig = DataSet.getDataSet("smallMolecules")
+        setupTestProject(cls)
 
-		cls._runImportSmallMols()
-		cls._runImportSeqs()
-		cls._waitOutput(cls.protImportSmallMols, 'outputSmallMolecules', sleepTime=5)
-		cls._waitOutput(cls.protImportSeqs, 'outputSequences', sleepTime=5)
+        cls._runImportSmallMols()
+        cls._runImportPDB()
+        cls._waitOutput(cls.protImportSmallMols, 'outputSmallMolecules', sleepTime=5)
 
-	@classmethod
-	def _runImportSmallMols(cls):
-		cls.protImportSmallMols = cls.newProtocol(
-			ProtChemImportSmallMolecules,
-			filesPath=cls.dsLig.getFile('mol2'))
-		cls.proj.launchProtocol(cls.protImportSmallMols, wait=False)
 
-	def _runOmniBindPrediction(self):
-		protOmniBind = self.newProtocol(ProtOmniBindPrediction)
+    @classmethod
+    def _runImportPDB(cls):
+        protImportPDB = cls.newProtocol(
+            ProtImportPdb,
+            inputPdbData=1, pdbFile=cls.ds.getFile('PDBx_mmCIF/1aoi.cif'))
+        cls.launchProtocol(protImportPDB)
+        cls.protImportPDB = protImportPDB
 
-		protOmniBind.inputSequences.set(self.protImportSeqs)
-		protOmniBind.inputSequences.setExtended('outputSequences')
-		protOmniBind.inputSmallMols.set(self.protImportSmallMols)
-		protOmniBind.inputSmallMols.setExtended('outputSmallMolecules')
+    @classmethod
+    def _runImportSmallMols(cls):
+        cls.protImportSmallMols = cls.newProtocol(
+            ProtChemImportSmallMolecules,
+            filesPath=cls.dsLig.getFile('mol2'))
+        cls.proj.launchProtocol(cls.protImportSmallMols, wait=False)
 
-		self.proj.launchProtocol(protOmniBind, wait=False)
-		return protOmniBind
+    def _runOmniBindPrediction(self):
+        protOmniBind = self.newProtocol(ProtOmniBindPrediction)
 
-	def test(self):
-		protOmniBind = self._runOmniBindPrediction()
-		self._waitOutput(protOmniBind, 'outputSequences', sleepTime=10)
-		assertHandle(self.assertIsNotNone, getattr(protOmniBind, 'outputSequences', None))
+        protOmniBind.inputStructure.set(self.protImportPDB)
+        protOmniBind.inputStructure.setExtended('outputPdb')
+        protOmniBind.inputSmallMols.set(self.protImportSmallMols)
+        protOmniBind.inputSmallMols.setExtended('outputSmallMolecules')
+
+        self.proj.launchProtocol(protOmniBind, wait=False)
+        return protOmniBind
+
+    def test(self):
+        protOmniBind = self._runOmniBindPrediction()
+        self._waitOutput(protOmniBind, 'outputAtomStructs', sleepTime=10)
+        assertHandle(self.assertIsNotNone, getattr(protOmniBind, 'outputAtomStructs', None))
