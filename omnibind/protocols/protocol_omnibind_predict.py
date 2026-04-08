@@ -309,27 +309,28 @@ class ProtOmniBindPrediction(EMProtocol):
 
 
       outMols = self.inputLibrary.get() if self.useLibrary.get() else self.inputSmallMols.get()
-      #molsListFile = self.setInteractMols(mols=outMols, structs=outStructs)
-      #outStructs._interactMols = String(molsListFile)
+      molsListFile = self.setInteractMols(mols=outMols, structs=outStructs)
+      outStructs._interactMols = String(molsListFile)
 
-      allMolsSet = SetOfSmallMolecules().create(outputPath=self._getPath())
-      addedMolsNames = set()
-      inputObj = self.inputStructure.get() if self.input.get() == 0 else self.inputStructures.get()
-      if hasattr(inputObj,'_interactMols'):
-          prevMols = inputObj._interactMols.get()
-          if prevMols:
-              for m in prevMols:
-                  allMolsSet.append(m)
-                  addedMolsNames.add(m.getMolName())
+      #allMolsSet = SetOfSmallMolecules().create(outputPath=self._getPath())
+      #addedMolsNames = set()
+      #inputObj = self.inputStructure.get() if self.input.get() == 0 else self.inputStructures.get()
+      #if hasattr(inputObj,'_interactMols'):
+      #    prevMols = inputObj.getAttributeValue('_interactMols')
+      #    print(f'prevMols: {prevMols}')
+      #    if prevMols:
+      #        for m in prevMols:
+      #            allMolsSet.append(m)
+      #            addedMolsNames.add(m.getMolName())
 
-      currentMols = self.inputLibrary.get() if self.useLibrary.get() else self.inputSmallMols.get()
-      for m in currentMols:
-          if m.getMolName() not in addedMolsNames:
-              allMolsSet.append(m)
-              addedMolsNames.add(m.getMolName())
+      #currentMols = self.inputLibrary.get() if self.useLibrary.get() else self.inputSmallMols.get()
+      #for m in currentMols:
+      #    if m.getMolName() not in addedMolsNames:
+      #        allMolsSet.append(m)
+      #        addedMolsNames.add(m.getMolName())
 
-
-      outStructs._interactMols = Pointer(allMolsSet)
+      #print(f'allInteractMols: {allMolsSet}')
+      #outStructs._interactMols = Pointer(allMolsSet)
 
       self._defineOutputs(outputAtomStructs=outStructs)
 
@@ -380,7 +381,6 @@ class ProtOmniBindPrediction(EMProtocol):
       if hasattr(inputObj, '_interactMols'):
           prevFile = inputObj.getAttributeValue('_interactMols')
           if prevFile and os.path.exists(str(prevFile)):
-              print(f"--- DEBUG: Leyendo rastro previo de {prevFile} ---")
               with open(str(prevFile), 'r') as f:
                   allPaths.update(line.strip() for line in f if line.strip())
 
