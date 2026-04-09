@@ -76,3 +76,5 @@ class TestOmniBindPrediction(BaseTest):
         protOmniBind = self._runOmniBindPrediction()
         self._waitOutput(protOmniBind, 'outputAtomStructs', sleepTime=10)
         assertHandle(self.assertIsNotNone, getattr(protOmniBind, 'outputAtomStructs', None))
+        self._waitOutput(protOmniBind, 'outputSmallMolecules', sleepTime=10)
+        assertHandle(self.assertIsNotNone, getattr(protOmniBind, 'outputSmallMolecules', None))
