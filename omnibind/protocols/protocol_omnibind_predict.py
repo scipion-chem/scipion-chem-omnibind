@@ -301,7 +301,6 @@ class ProtOmniBindPrediction(EMProtocol):
           protID = os.path.basename(struct.getFileName()).split('.')[0]
 
           outStruct = struct.clone()
-          #outStruct._interactScoresFile = String(outputFile)
           outStructs.append(outStruct)
 
           if protID in intDic:
@@ -309,30 +308,36 @@ class ProtOmniBindPrediction(EMProtocol):
 
 
       outMols = self.inputLibrary.get() if self.useLibrary.get() else self.inputSmallMols.get()
-      molsListFile = self.setInteractMols(mols=outMols, structs=outStructs)
-      outStructs._interactMols = String(molsListFile)
 
-      #allMolsSet = SetOfSmallMolecules().create(outputPath=self._getPath())
-      #addedMolsNames = set()
-      #inputObj = self.inputStructure.get() if self.input.get() == 0 else self.inputStructures.get()
-      #if hasattr(inputObj,'_interactMols'):
-      #    prevMols = inputObj.getAttributeValue('_interactMols')
-      #    print(f'prevMols: {prevMols}')
-      #    if prevMols:
-      #        for m in prevMols:
-      #            allMolsSet.append(m)
-      #            addedMolsNames.add(m.getMolName())
-
-      #currentMols = self.inputLibrary.get() if self.useLibrary.get() else self.inputSmallMols.get()
-      #for m in currentMols:
-      #    if m.getMolName() not in addedMolsNames:
-      #        allMolsSet.append(m)
-      #        addedMolsNames.add(m.getMolName())
-
-      #print(f'allInteractMols: {allMolsSet}')
-      #outStructs._interactMols = Pointer(allMolsSet)
+      # this is the file thing
+      #molsListFile = self.setInteractMols(mols=outMols, structs=outStructs)
+      #outStructs._interactMols = String(molsListFile)
 
       self._defineOutputs(outputAtomStructs=outStructs)
+
+      if not self.useLibrary.get():
+          inMols = self.inputSmallMols.get()
+          outputSet = inMols.createCopy(self._getPath(), copyInfo=True)
+
+          for mol in inMols:
+              nMol = mol.clone()
+              molName = nMol.getMolName()
+
+              for protID, molScores in intDic.items():
+                  scores_dict = molScores.get(molName, {})
+                  if isinstance(scores_dict, dict):
+                      score = scores_dict.get('OmniBind_pKd', 0.0)
+                  else:
+                      score = scores_dict
+
+                  colName = f"OmniBind_pKd_{protID}"
+                  setattr(nMol, colName, Float(score))
+
+              outputSet.append(nMol)
+
+          outputSet.updateMolClass()
+          self._defineOutputs(outputSmallMolecules=outputSet)
+
 
       if len(inStructs) == 1:
           protID = os.path.basename(inStructs[0].getFileName()).split('.')[0]
