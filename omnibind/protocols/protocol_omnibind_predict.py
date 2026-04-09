@@ -306,9 +306,6 @@ class ProtOmniBindPrediction(EMProtocol):
           if protID in intDic:
               data[protID] = intDic[protID]
 
-
-      outMols = self.inputLibrary.get() if self.useLibrary.get() else self.inputSmallMols.get()
-
       # this is the file thing
       #molsListFile = self.setInteractMols(mols=outMols, structs=outStructs)
       #outStructs._interactMols = String(molsListFile)
@@ -350,11 +347,11 @@ class ProtOmniBindPrediction(EMProtocol):
 
               with open(oLibFile, 'w') as f:
                   for molName, scores in scoreDic.items():
-                      f.write(f'{mapDic[molName]}\t{scores["OmniBind_pKi"]}\n')
+                      f.write(f'{mapDic[molName]}\t{scores["OmniBind_pKd"]}\n')
 
               outputLib = inLib.clone()
               outputLib.setFileName(oLibFile)
-              outputLib.setHeaders(inLib.getHeaders() + ['OmniBind_pKi'])
+              outputLib.setHeaders(inLib.getHeaders() + ['OmniBind_pKd'])
               self._defineOutputs(outputLibrary=outputLib)
 
           else:
