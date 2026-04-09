@@ -306,10 +306,6 @@ class ProtOmniBindPrediction(EMProtocol):
           if protID in intDic:
               data[protID] = intDic[protID]
 
-      # this is the file thing
-      #molsListFile = self.setInteractMols(mols=outMols, structs=outStructs)
-      #outStructs._interactMols = String(molsListFile)
-
       self._defineOutputs(outputAtomStructs=outStructs)
 
       if not self.useLibrary.get():
@@ -395,9 +391,7 @@ class ProtOmniBindPrediction(EMProtocol):
           for path in sorted(allPaths):
               f.write(f"{path}\n")
 
-      structs._interactMols = String(molsListFile)
 
-      return molsListFile
 
   def writeInteractScoresDic(self, intDic, outFile=None):
       """
