@@ -171,10 +171,6 @@ class ProtOmniBindPrediction(EMProtocol):
       self._insertFunctionStep(self.convertStep)
     self._insertFunctionStep(self.generate3DiStep)
     self._insertFunctionStep(self.predictStep)
-    #if self.input.get() == 0:
-    #    self._insertFunctionStep(self.createOutputStepSingle)
-    #else:
-    #    self._insertFunctionStep(self.createOutputStepSet)
     self._insertFunctionStep(self.createOutputStep)
 
 
@@ -308,6 +304,13 @@ class ProtOmniBindPrediction(EMProtocol):
 
       self._defineOutputs(outputAtomStructs=outStructs)
 
+      proteinIDs = [os.path.basename(s.getFileName()).split('.')[0] for s in inStructs]
+
+      if len(inStructs) == 1:
+          newHeaders = ["OmniBind_pKi", "OmniBind_pKd", "OmniBind_pIC50", "OmniBind_pEC50"]
+      else:
+          newHeaders = [f"OmniBind_pKd_{pID}" for pID in proteinIDs]
+
       if not self.useLibrary.get():
           inMols = self.inputSmallMols.get()
           outputSet = inMols.createCopy(self._getPath(), copyInfo=True)
@@ -316,82 +319,57 @@ class ProtOmniBindPrediction(EMProtocol):
               nMol = mol.clone()
               molName = nMol.getMolName()
 
-              for protID, molScores in intDic.items():
-                  scores_dict = molScores.get(molName, {})
-                  if isinstance(scores_dict, dict):
-                      score = scores_dict.get('OmniBind_pKd', 0.0)
-                  else:
-                      score = scores_dict
-
-                  colName = f"OmniBind_pKd_{protID}"
-                  setattr(nMol, colName, Float(score))
+              if len(inStructs) == 1:
+                  pID = proteinIDs[0]
+                  mScores = intDic.get(pID, {}).get(molName, {})
+                  for h in newHeaders:
+                      setattr(nMol, h, Float(mScores.get(h, 0.0)))
+              else:
+                  for pID in proteinIDs:
+                      val = intDic.get(pID, {}).get(molName, {}).get("OmniBind_pKd", 0.0)
+                      setattr(nMol, f"OmniBind_pKd_{pID}", Float(val))
 
               outputSet.append(nMol)
 
           outputSet.updateMolClass()
           self._defineOutputs(outputSmallMolecules=outputSet)
 
+      else:
+          inLib = self.inputLibrary.get()
+          mapDic = inLib.getLibraryMap(inverted=True, fullLine=True)
+          oLibFile = self._getPath('outputLibrary.smi')
 
-      if len(inStructs) == 1:
-          protID = os.path.basename(inStructs[0].getFileName()).split('.')[0]
-          scoreDic = intDic.get(protID, {})
+          with open(oLibFile, 'w') as f:
+              allMolNames = set()
+              for pID in proteinIDs:
+                  allMolNames.update(intDic.get(pID, {}).keys())
 
-          if self.useLibrary.get():
-              inLib = self.inputLibrary.get()
-              mapDic = inLib.getLibraryMap(inverted=True, fullLine=True)
-              oLibFile = self._getPath('outputLibrary.smi')
+              for molName in allMolNames:
+                  if molName in mapDic:
+                      lineBase = mapDic[molName]
+                      scoresRow = []
 
-              with open(oLibFile, 'w') as f:
-                  for molName, scores in scoreDic.items():
-                      f.write(f'{mapDic[molName]}\t{scores["OmniBind_pKd"]}\n')
+                      if len(inStructs) == 1:
+                          pID = proteinIDs[0]
+                          mScores = intDic.get(pID, {}).get(molName, {})
+                          for h in newHeaders:
+                              scoresRow.append(str(mScores.get(h, 0.0)))
+                      else:
+                          for pID in proteinIDs:
+                              val = intDic.get(pID, {}).get(molName, {}).get("OmniBind_pKd", 0.0)
+                              scoresRow.append(str(val))
 
-              outputLib = inLib.clone()
-              outputLib.setFileName(oLibFile)
-              outputLib.setHeaders(inLib.getHeaders() + ['OmniBind_pKd'])
-              self._defineOutputs(outputLibrary=outputLib)
 
-          else:
-              inSet = self.inputSmallMols.get()
-              outputSet = inSet.createCopy(self._getPath(), copyInfo=True)
+                      scoresStr = '\t'.join(scoresRow)
+                      f.write(f"{lineBase}\t{scoresStr}\n")
 
-              for mol in inSet:
-                  nMol = mol.clone()
-                  molName = nMol.getMolName()
-                  if molName in scoreDic:
-                      s = scoreDic[molName]
-                      setattr(nMol, 'OmniBind_pKi', Float(s['OmniBind_pKi']))
-                      setattr(nMol, 'OmniBind_pKd', Float(s['OmniBind_pKd']))
-                      setattr(nMol, 'OmniBind_pIC50', Float(s['OmniBind_pIC50']))
-                      setattr(nMol, 'OmniBind_pEC50', Float(s['OmniBind_pEC50']))
-                      outputSet.append(nMol)
-
-              outputSet.updateMolClass()
-              self._defineOutputs(outputSmallMolecules=outputSet)
+          outputLib = inLib.clone()
+          outputLib.setFileName(oLibFile)
+          outputLib.setHeaders(inLib.getHeaders() + newHeaders)
+          self._defineOutputs(outputLibrary=outputLib)
 
 
   ############## UTILS ########################
-  def setInteractMols(self, mols, structs):
-      molsListFile = os.path.join(self._getExtraPath(), 'interacting_molecules.txt')
-      allPaths = set()
-
-      inputObj = self.inputStructure.get() if self.input.get() == 0 else self.inputStructures.get()
-
-      if hasattr(inputObj, '_interactMols'):
-          prevFile = inputObj.getAttributeValue('_interactMols')
-          if prevFile and os.path.exists(str(prevFile)):
-              with open(str(prevFile), 'r') as f:
-                  allPaths.update(line.strip() for line in f if line.strip())
-
-      for mol in mols:
-          molPath = mol.getFileName()
-          if molPath:
-              allPaths.add(os.path.abspath(molPath))
-
-      with open(molsListFile, 'w') as f:
-          for path in sorted(allPaths):
-              f.write(f"{path}\n")
-
-
 
   def writeInteractScoresDic(self, intDic, outFile=None):
       """
