@@ -23,23 +23,19 @@
 # *  e-mail address 'scipion@cnb.csic.es'
 # *
 # **************************************************************************
-import csv
-import json
-import os
-import pickle
-import shutil
+import csv, json, os, shutil
 from Bio.PDB import PDBParser
 from Bio.SeqUtils import seq1
-from pwchem.objects import SetOfSmallMolecules, SmallMolecule, SmallMoleculesLibrary
 from pwem.objects import SetOfAtomStructs
 
 from pwem.protocols import EMProtocol
 from pyworkflow.protocol import params
-
 from pwem.convert import cifToPdb
 from pyworkflow.object import String, Float, Pointer
+
 from pwchem import Plugin as pwchemPlugin
 from pwchem.constants import OPENBABEL_DIC
+from pwchem.utils import getBaseName
 
 from .. import Plugin as omnibindPlugin
 from ..constants import OMNIBIND_DIC
@@ -190,7 +186,8 @@ class ProtOmniBindPrediction(EMProtocol):
 
       for struct in self._getInpStructs():
           src = struct.getFileName()
-          dst = os.path.join(structDir, os.path.basename(src))
+          bName = getBaseName(src).split('.')[0]
+          dst = os.path.join(structDir, bName + os.path.splitext(src)[1])
           if not os.path.exists(dst):
               shutil.copy(src, dst)
 
@@ -261,8 +258,7 @@ class ProtOmniBindPrediction(EMProtocol):
         cwd=extraPath
     )
 
-  def createOutputStep(self):
-      resultsFile = self.getPath("results.csv")
+  def parseScoreDic(self, resultsFile, scoreNames):
       smisDic = self.getInputSMIs()
       smiToName = {v.strip(): k for k, v in smisDic.items()}
 
@@ -277,14 +273,17 @@ class ProtOmniBindPrediction(EMProtocol):
               if not molName:
                   continue
 
-              if protID not in intDic:
-                  intDic[protID] = {}
-              intDic[protID][molName] = {
-                  "OmniBind_pKi": float(row['pKi']),
-                  "OmniBind_pKd": float(row['pKd']),
-                  "OmniBind_pIC50": float(row['pIC50']),
-                  "OmniBind_pEC50": float(row['pEC50'])
-              }
+              if molName not in intDic:
+                  intDic[molName] = {}
+
+              intDic[molName][protID] = {sName: float(row[sName.split('_')[1]]) for sName in scoreNames}
+      return intDic
+
+
+  def createOutputStep(self):
+      resultsFile = self.getPath("results.csv")
+      scoreNames = ['OmniBind_pKi', 'OmniBind_pKd', 'OmniBind_pIC50', 'OmniBind_pEC50']
+      intDic = self.parseScoreDic(resultsFile, scoreNames)
 
       inStructs = self._getInpStructs()
       outStructs = SetOfAtomStructs().create(outputPath=self._getPath())
@@ -292,47 +291,36 @@ class ProtOmniBindPrediction(EMProtocol):
       outputFile = self.writeInteractScoresDic(intDic)
       outStructs._interactScoresFile = String(outputFile)
 
-      data = {}
+      proteinIDs = []
       for struct in inStructs:
-          protID = os.path.basename(struct.getFileName()).split('.')[0]
-
           outStruct = struct.clone()
           outStructs.append(outStruct)
-
-          if protID in intDic:
-              data[protID] = intDic[protID]
+          proteinIDs.append(getBaseName(struct.getFileName()))
 
       self._defineOutputs(outputAtomStructs=outStructs)
 
-      proteinIDs = [os.path.basename(s.getFileName()).split('.')[0] for s in inStructs]
-
-      if len(inStructs) == 1:
-          newHeaders = ["OmniBind_pKi", "OmniBind_pKd", "OmniBind_pIC50", "OmniBind_pEC50"]
-      else:
-          newHeaders = [f"OmniBind_pKd_{pID}" for pID in proteinIDs]
-
       if not self.useLibrary.get():
           inMols = self.inputSmallMols.get()
-          outputSet = inMols.createCopy(self._getPath(), copyInfo=True)
+          outputSmallMols = inMols.createCopy(self._getPath(), copyInfo=True)
 
           for mol in inMols:
               nMol = mol.clone()
               molName = nMol.getMolName()
 
+              molDic = intDic[molName]
               if len(inStructs) == 1:
-                  pID = proteinIDs[0]
-                  mScores = intDic.get(pID, {}).get(molName, {})
-                  for h in newHeaders:
-                      setattr(nMol, h, Float(mScores.get(h, 0.0)))
+                  sDic = molDic.get(proteinIDs[0], {})
+                  for sName, val in sDic.items():
+                      setattr(nMol, sName, Float(val))
               else:
-                  for pID in proteinIDs:
-                      val = intDic.get(pID, {}).get(molName, {}).get("OmniBind_pKd", 0.0)
-                      setattr(nMol, f"OmniBind_pKd_{pID}", Float(val))
+                  for pID, sDic in molDic.items():
+                      for sName, val in sDic.items():
+                          setattr(nMol, f"{sName}_{pID}", Float(val))
 
-              outputSet.append(nMol)
+              outputSmallMols.append(nMol)
 
-          outputSet.updateMolClass()
-          self._defineOutputs(outputSmallMolecules=outputSet)
+          outputSmallMols.updateMolClass()
+          self._defineOutputs(outputSmallMolecules=outputSmallMols)
 
       else:
           inLib = self.inputLibrary.get()
@@ -340,32 +328,25 @@ class ProtOmniBindPrediction(EMProtocol):
           oLibFile = self._getPath('outputLibrary.smi')
 
           with open(oLibFile, 'w') as f:
-              allMolNames = set()
-              for pID in proteinIDs:
-                  allMolNames.update(intDic.get(pID, {}).keys())
+              if len(inStructs) == 1:
+                  headers = scoreNames
+                  for molName, molDic in intDic.items():
+                      sDic = molDic.get(proteinIDs[0], {})
+                      scoreStr = '\t'.join([str(sDic[sName]) for sName in scoreNames])
+                      f.write(f'{mapDic[molName]}\t{scoreStr}\n')
+              else:
+                  headers = [f'{sName}_{pID}' for pID in proteinIDs for sName in scoreNames]
+                  for molName, molDic in intDic.items():
+                      newCols = []
+                      for protID, sDic in molDic.items():
+                          newCols += [str(sDic[sName]) for sName in scoreNames]
 
-              for molName in allMolNames:
-                  if molName in mapDic:
-                      lineBase = mapDic[molName]
-                      scoresRow = []
-
-                      if len(inStructs) == 1:
-                          pID = proteinIDs[0]
-                          mScores = intDic.get(pID, {}).get(molName, {})
-                          for h in newHeaders:
-                              scoresRow.append(str(mScores.get(h, 0.0)))
-                      else:
-                          for pID in proteinIDs:
-                              val = intDic.get(pID, {}).get(molName, {}).get("OmniBind_pKd", 0.0)
-                              scoresRow.append(str(val))
-
-
-                      scoresStr = '\t'.join(scoresRow)
-                      f.write(f"{lineBase}\t{scoresStr}\n")
+                      newStr = '\t'.join(newCols)
+                      f.write(f'{mapDic[molName]}\t{newStr}\n')
 
           outputLib = inLib.clone()
           outputLib.setFileName(oLibFile)
-          outputLib.setHeaders(inLib.getHeaders() + newHeaders)
+          outputLib.setHeaders(inLib.getHeaders() + headers)
           self._defineOutputs(outputLibrary=outputLib)
 
 
@@ -379,14 +360,13 @@ class ProtOmniBindPrediction(EMProtocol):
       if not outFile:
           outFile = os.path.join(self._getExtraPath(), 'scoresFile.json')
 
-      finalData = {}
-
       inStructs = self._getInpStructs()
       if hasattr(inStructs, '_interactScoresFile'):
           prevFile = getattr(inStructs, '_interactScoresFile')
       else:
           prevFile = None
 
+      finalData = {}
       if prevFile:
           try:
               with open(str(prevFile), 'r') as f:
@@ -394,15 +374,15 @@ class ProtOmniBindPrediction(EMProtocol):
           except Exception:
               finalData = {}
 
-      for protID, newMols in intDic.items():
-          if protID not in finalData:
-              finalData[protID] = {}
+      for molName, molDic in intDic.items():
+          for protID, sDic in molDic.items():
+              if protID not in finalData:
+                  finalData[protID] = {}
 
-          for molName, newScores in newMols.items():
               if molName in finalData[protID]:
-                  finalData[protID][molName].update(newScores)
+                  finalData[protID][molName].update(sDic)
               else:
-                  finalData[protID][molName] = newScores
+                  finalData[protID][molName] = sDic
 
       with open(outFile, 'w') as f:
           json.dump(finalData, f, indent=4)
