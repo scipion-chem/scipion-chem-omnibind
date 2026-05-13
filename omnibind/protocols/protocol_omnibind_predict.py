@@ -30,7 +30,7 @@ import pickle
 import shutil
 from Bio.PDB import PDBParser
 from Bio.SeqUtils import seq1
-from pwchem.objects import  SetOfAtomStructsChem, AtomStructChem
+from pwchem.objects import  SetOfAtomStructsChem
 
 from pwem.protocols import EMProtocol
 from pyworkflow.protocol import params
@@ -300,7 +300,6 @@ class ProtOmniBindPrediction(EMProtocol):
       for struct in inStructs:
           protID = os.path.basename(struct.getFileName()).split('.')[0]
 
-          outStruct = AtomStructChem()
           outStruct = struct.clone()
           outStruct.setFileName(struct.getFileName())
 
