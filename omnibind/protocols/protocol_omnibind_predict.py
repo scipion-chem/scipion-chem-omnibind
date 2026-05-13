@@ -30,8 +30,7 @@ import pickle
 import shutil
 from Bio.PDB import PDBParser
 from Bio.SeqUtils import seq1
-from pwchem.objects import SetOfSmallMolecules, SmallMolecule, SmallMoleculesLibrary
-from pwem.objects import SetOfAtomStructs
+from pwchem.objects import  SetOfAtomStructsChem, AtomStructChem
 
 from pwem.protocols import EMProtocol
 from pyworkflow.protocol import params
@@ -287,16 +286,24 @@ class ProtOmniBindPrediction(EMProtocol):
               }
 
       inStructs = self._getInpStructs()
-      outStructs = SetOfAtomStructs().create(outputPath=self._getPath())
+      outStructs = SetOfAtomStructsChem().create(outputPath=self._getPath())
 
       outputFile = self.writeInteractScoresDic(intDic)
-      outStructs._interactScoresFile = String(outputFile)
+      with open(outputFile, 'r') as f:
+          combinedDic = json.load(f)
+
+      outStructs.setInteractScoresFile(outputFile)
+      outStructs.setInteractScoresDic(combinedDic)
+      outStructs.updateScoreTypes()
 
       data = {}
       for struct in inStructs:
           protID = os.path.basename(struct.getFileName()).split('.')[0]
 
+          outStruct = AtomStructChem()
           outStruct = struct.clone()
+          outStruct.setFileName(struct.getFileName())
+
           outStructs.append(outStruct)
 
           if protID in intDic:
