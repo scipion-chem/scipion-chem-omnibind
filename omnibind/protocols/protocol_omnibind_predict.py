@@ -294,6 +294,9 @@ class ProtOmniBindPrediction(EMProtocol):
 
       outStructs.setInteractScoresFile(outputFile)
       outStructs.setInteractScoresDic(combinedDic)
+
+      outMols = self.inputLibrary.get() if self.useLibrary.get() else self.inputSmallMols.get()
+      outStructs.setInteractMols(outMols)
       outStructs.updateScoreTypes()
 
       data = {}
