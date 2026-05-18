@@ -295,6 +295,8 @@ class ProtOmniBindPrediction(EMProtocol):
 
       inStructs = self._getInpStructs()
       outStructs = SetOfAtomStructsChem().create(outputPath=self._getPath())
+      if self.input.get() == 1:
+          outStructs.copyInfo(self.inputStructures.get())
 
       scoresJsonFile = self._getExtraPath('scoresFile.json')
       if hasattr(self.inputStructures.get(), 'getInteractScoresFile'):
