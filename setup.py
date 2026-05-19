@@ -30,12 +30,14 @@ setup(
     author_email='scipion@cnb.csic.es',
     keywords='scipion pdb scipion-3 virtual-screening',
     packages=find_packages(),
-    install_requires=[requirements],
+    install_requires=requirements,
     include_package_data=True,
     package_data={
        'omnibind': [''],
     },
     entry_points={
-        'pyworkflow.plugin': 'omnibind = omnibind'
+        'pyworkflow.plugin': [
+            'omnibind = omnibind'
+        ]
     }
 )

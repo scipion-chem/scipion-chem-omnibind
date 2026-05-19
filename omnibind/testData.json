@@ -1,0 +1,15 @@
+{
+	"datasets": ["model_building_tutorial"],
+	"skippable": {
+		"gpu": [
+			"test_omnibind.TestOmniBindPrediction"
+		],
+		"dependencies": [
+			
+		],
+		"others": [
+			{
+			}
+		]
+	}
+}
